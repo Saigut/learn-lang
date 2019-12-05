@@ -94,8 +94,19 @@
                                       (symbol->string (syntax->datum #'name))
                                       "-method2")))])
           #'(begin
+              (define name (lambda () "nothing"))
               (define method1 (lambda () "nothing"))
               (define method2 (lambda () "nothing"))))])))
+
+(define-syntax define-class2
+  (syntax-rules ()
+    [(_ name) (begin
+                (define (string->symbol
+                          (string-append
+                            "class-"
+                            (symbol->string (syntax->datum name))
+                            "-method1")) 0)
+                )]))
 
 (define-syntax define-structure
   (lambda (x)
@@ -193,3 +204,16 @@
               ...
               (define test-define-dasb
                 (lambda (x) "111"))))])))
+
+(define-syntax let
+  (lambda (x)
+    (define ids?
+      (lambda (ls)
+        (printf "ls: ~a~%" ls)
+        (or (null? ls)
+          (and (identifier? (car ls))
+            (ids? (cdr ls))))))
+    (syntax-case x ()
+      [(_ ((i e) ...) b1 b2 ...)
+        ((lambda (x) (printf "sbsb: ~a ~a~%" #'(111 i ...) #'5)) 111)
+        #'((lambda (i ...) b1 b2 ...) e ...)])))
