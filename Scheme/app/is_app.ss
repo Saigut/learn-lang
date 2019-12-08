@@ -50,18 +50,13 @@
                 (define (#,name)
                   (define data-bv (make-bytevector 0))
                   (define cur-pos 0)
-                  (define endian 'big)
+                  (define endian 'little)
                   (define (field-name)
 ;                    (printf "my start pos: ~a, my bit width: ~a, my name: ~a~%" start-pos bit-width 'field-name)
                     (bytevector-uint-ref data-bv start-pos endian bit-width))
                   ...
                   (define (set-data-bv bv)
-                    (set! data-bv bv)
-                    (let ([magic (bytevector-uint-ref data-bv 0 'big 4)])
-                      (cond
-                        ((= magic (bytevector-uint-ref #vu8(#xa1 #xb2 #xc3 #xd4) 0 'big 4)) (set! endian 'big))
-                        ((= magic (bytevector-uint-ref #vu8(#xa1 #xb2 #xc3 #xd4) 0 'little 4)) (set! endian 'little))
-                        (else (error 'invalid-magic "invalid magic!" magic)))))
+                    (set! data-bv bv))
                   (lambda (msg . params)
                     (cond
                       [(eqv? msg 'field-name) (field-name)]
@@ -95,13 +90,13 @@
 
   (pcap-hdr-bin 'set-data-bv header)
 
-  (printf "magic: ~x~%" (pcap-hdr-bin 'magic))
-  (printf "ver-major: ~x~%" (pcap-hdr-bin 'ver-major))
-  (printf "ver-minor: ~x~%" (pcap-hdr-bin 'ver-minor))
-  (printf "thiszone: ~x~%" (pcap-hdr-bin 'thiszone))
-  (printf "sigfigs: ~x~%" (pcap-hdr-bin 'sigfigs))
-  (printf "snaplen: ~x~%" (pcap-hdr-bin 'snaplen))
-  (printf "network: ~x~%" (pcap-hdr-bin 'network))
+  (printf "magic: 0x~x~%" (pcap-hdr-bin 'magic))
+  (printf "ver-major: 0x~x~%" (pcap-hdr-bin 'ver-major))
+  (printf "ver-minor: 0x~x~%" (pcap-hdr-bin 'ver-minor))
+  (printf "thiszone: 0x~x~%" (pcap-hdr-bin 'thiszone))
+  (printf "sigfigs: 0x~x~%" (pcap-hdr-bin 'sigfigs))
+  (printf "snaplen: 0x~x~%" (pcap-hdr-bin 'snaplen))
+  (printf "network: 0x~x~%" (pcap-hdr-bin 'network))
 
   (close-port fp)
-  )
+)
