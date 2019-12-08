@@ -32,7 +32,9 @@
     (define (parser-body name body)
       (syntax-case body (bd)
         [(bd other ...)
-          #'(define name "just-it-")]))
+          #'(define xxxname "just-it-")]))
     (syntax-case x ()
       [(_ name body)
-        (parser-body #'name #'body)])))
+        #'(define xxxname "just-it-")])))
+
+(def-new-type bbbbb (bd 111))
