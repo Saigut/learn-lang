@@ -1,4 +1,5 @@
-
+#!r6rs
+(import (chezscheme))
 
 ;; syntax: (syntax-case expr (literal ...) clause ...)
 
@@ -33,3 +34,14 @@
                 [(e0 => e1) #'(let ([t e0]) (if t (e1 t) rest))]
                 [(e0 e1 e2 ...)
                   #'(if e0 (begin e1 e2 ...) rest)]))))])))
+
+; fake pcar is a variable
+(let ([p (cons 0 #f)])
+  (define-syntax pcar
+    (lambda (x)
+      (syntax-case x ()
+        [_ (identifier? x) #'(car p)]
+        [(_ e) #'(set-car! p e)])))
+  (let ([a pcar])
+    (pcar 1)
+    (list a pcar))) <graphic> (0 1)
