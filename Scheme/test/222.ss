@@ -38,3 +38,10 @@
         #'(define xxxname "just-it-")])))
 
 (def-new-type bbbbb (bd 111))
+
+(let ([bv #vu8(#x01 #x02 #x03 #x04)])
+  (define n (bytevector-uint-ref bv 0 'big (bytevector-length bv)))
+  (printf "bv: ~b~%" bv)
+  (printf "num bigend: ~x~%" n)
+  (printf "num bigend reverse: ~x~%" (bitwise-reverse-bit-field n 0 (* 8 (bytevector-length bv))))
+)
