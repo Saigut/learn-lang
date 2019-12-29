@@ -8,7 +8,7 @@
           ipv4-hdr tcp-hdr
           parser-tcp parser-ipv4
           parse-ethernet-ii parse-pcaprec parse-pcap
-          traverse-bin-struct-vector
+          traverse-bin-struct
         )
 
   (define-syntax define-bin-struct
@@ -66,6 +66,8 @@
                            (gen-id #'name #'name "-bit-size")]
                          [occupy-byte-num
                            (gen-id #'name #'name "-occupy-byte-num")]
+                         [type-name
+                           (gen-id #'name #'name "-type")]
                          [structure-length (+ (length #'(field-name ...)) 3)]
                          [(index ...)
                            (let f ([i 3] [ids #'(field-name ...)])
@@ -91,7 +93,11 @@
                             (printf "~a:~%" 'name)
                             (printf "~a: 0x~x, " (symbol->string 'field-name) ((vector-ref x index)))
                             ...
-                            (printf "~%"))))
+                            (printf "~%"))
+                          (+ eval-bit-width ...)
+                          (let ([bits-num (+ eval-bit-width ...)])
+                            (+ (div bits-num 8)
+                              (if (zero? (mod bits-num 8)) 0 1)))))
                       (error 'constructor "parameter should be bytevector!" bv))
                     (vector 'bin-struct 'name data
                       (lambda ()
@@ -135,7 +141,17 @@
                 (define occupy-byte-num
                   (let ([bits-num (+ eval-bit-width ...)])
                     (+ (div bits-num 8)
-                      (if (zero? (mod bits-num 8)) 0 1))))))]
+                      (if (zero? (mod bits-num 8)) 0 1))))
+                (define name
+                  (lambda ()
+                    (define data
+                      (vector
+                        (+ eval-bit-width ...)
+                        (let ([bits-num (+ eval-bit-width ...)])
+                          (+ (div bits-num 8)
+                            (if (zero? (mod bits-num 8)) 0 1)))))
+                    (vector 'bin-struct-type 'type-name data)))
+              ))]
         [_ (syntax-error x "Invalid syntax")])))
 
   (define (big-endian-to endian num byte-num)
@@ -150,12 +166,45 @@
                  'little
                byte-num)))))
 
+  (define bin-struct-type?
+    (lambda (x)
+      (and (vector? x)
+        (= (vector-length x) 3)
+        (eq? (vector-ref x 0) 'bin-struct-type)
+        (symbol? (vector-ref x 1))
+        (let ([v (vector-ref x 2)])
+          (and (vector? v) (= 2 (vector-length v))))
+      )))
+
+  (define bin-struct-type-bit-size
+    (lambda (x)
+      ((vector-ref (vector-ref x 2) 0) x)))
+
+  (define bin-struct-type-occupy-byte-num
+    (lambda (x)
+      ((vector-ref (vector-ref x 2) 1) x)))
+
   (define bin-struct?
     (lambda (x)
       (and (vector? x)
-        (> (vector-length x) 2)
+        (> (vector-length x) 3)
         (eq? (vector-ref x 0) 'bin-struct)
-        (symbol? (vector-ref x 1)))))
+        (symbol? (vector-ref x 1))
+        (let ([v (vector-ref x 2)])
+          (and (vector? v) (= 8 (vector-length v))))
+        )))
+
+  (define bin-struct-print-all
+    (lambda (x)
+      ((vector-ref (vector-ref x 2) 5) x)))
+
+  (define bin-struct-bit-size
+    (lambda (x)
+      ((vector-ref (vector-ref x 2) 6) x)))
+
+  (define bin-struct-occupy-byte-num
+    (lambda (x)
+      ((vector-ref (vector-ref x 2) 7) x)))
 
   (define (bin-bytes bv base-bv-pos use-bv-sz)
     (cond
@@ -397,16 +446,19 @@
   (define (traverse-bin-struct-vector v)
     (vector-for-each
       (lambda (x)
-        (cond
-          [(bin-struct? x)
-            ((vector-ref (vector-ref x 2) 5) x)]
-          [(procedure? x)
-            (printf "0x~x~%" (x))]
-          [(vector? x)
-            (traverse-bin-struct-vector x)]
-          [else
-            (error 'traverse-bin-struct-vector "unexpected parameter!" x)]))
+        (traverse-bin-struct x))
       v))
+
+  (define (traverse-bin-struct x)
+    (cond
+      [(bin-struct? x)
+        ((vector-ref (vector-ref x 2) 5) x)]
+      [(procedure? x)
+        (printf "0x~x~%" (x))]
+      [(vector? x)
+        (traverse-bin-struct-vector x)]
+      [else
+        (error 'traverse-bin-struct "unexpected parameter!" x)]))
 )
 
 (let ([pathname "C:\\Users\\Saigut\\Desktop\\pktpcap2.pcap"]
@@ -417,7 +469,149 @@
 
   (let-values ([(v pos)
                  (parse-pcap header 0 (bytevector-length header))])
-    (traverse-bin-struct-vector v))
+    (traverse-bin-struct v))
 
   (close-port fp)
 )
+
+;; bv-info: (vector (vector bv cur-bv-pos) rst-v)
+
+(define bin-parser-holder
+  (lambda (parser bv-info use-bv-sz arg)
+    (define the-bv (vector-ref bv-info 0))
+    (define bv (vector-ref the-bv 0))
+    (define cur-bv-pos (vector-ref the-bv 1))
+    (define rst-v (vector-ref bv-info 2))
+    (if (and (> use-bv-sz 0) (> cur-bv-pos 0)
+          (<= (+ cur-bv-pos use-bv-sz) (bytevector-length bv)))
+      (let ([rst (parser (vector the-bv (vector)) use-bv-sz arg)])
+        (if rst (vector-set! bv-info 2
+                  (list->vector
+                    (append (vector->list rst-v) (vector->list rst))))))
+      (error 'bin-parser-holder "bv error!" bv-info use-bv-sz))
+  ))
+
+(define-syntax bin-eat-limit-witharg
+  (lambda (x)
+    (syntax-case x ()
+      [(k name parser bv-info use-bv-sz arg)
+        (identifier? (syntax->datum #'name))
+        #'(begin
+            (define name (bin-parser-holder parser bv-info use-bv-sz arg)))])))
+
+(define-syntax bin-eat
+  (lambda (x)
+    (syntax-case x ()
+      [(k name parser bv-info)
+        #'(begin
+            (bin-eat-limit-witharg name
+              parser
+              bv-info
+              (- (bytevector-length
+                   (vector-ref bv-info 0))
+                (vector-ref bv-info 1))
+              (vector)))])))
+
+(define-syntax bin-eat-witharg
+  (lambda (x)
+    (syntax-case x ()
+      [(k name parser bv-info arg)
+        #'(begin
+            (bin-eat-limit-witharg name
+              parser
+              bv-info
+              (- (bytevector-length
+                   (vector-ref bv-info 0))
+                (vector-ref bv-info 1))
+              arg))])))
+
+(define-syntax bin-eat-limit
+  (lambda (x)
+    (syntax-case x ()
+      [(k name parser bv-info use-bv-sz)
+        #'(begin
+            (bin-eat-limit-witharg name
+              parser
+              bv-info
+              use-bv-sz
+              (vector)))])))
+
+
+;; bv-info: (vector (vector bv cur-bv-pos) rst-v)
+(define (new-parse-tcp bv-info use-bv-sz arg)
+  (define the-bv (vector-ref bv-info 0))
+  (define rst-v (vector-ref bv-info 1))
+  (define seq-lst (vector->list rst-v))
+  (define bv (vector-ref the-bv 0))
+  (define base-bv-pos (vector-ref the-bv 1))
+  (define cur-bv-offset 0)
+  (if (and (< cur-bv-offset use-bv-sz) (>= use-bv-sz tcp-hdr-occupy-byte-num))
+    (let ()
+      (define tmp-struct (make-tcp-hdr
+                           (bytevector-copy-sub bv
+                             (+ base-bv-pos cur-bv-offset)
+                             tcp-hdr-occupy-byte-num)))
+      (set! seq-lst (append! seq-lst `(,tmp-struct)))
+      (set! cur-bv-offset (+ cur-bv-offset tcp-hdr-occupy-byte-num))
+      (if (< cur-bv-offset use-bv-sz)
+        (let ()
+          (define tmp-sz (- use-bv-sz cur-bv-offset))
+          (set! seq-lst (append! seq-lst `(,(bin-bytes (bytevector-copy-sub bv
+                                                         (+ base-bv-pos cur-bv-offset)
+                                                         tmp-sz)
+                                              0
+                                              tmp-sz))))
+          (set! cur-bv-offset (+ cur-bv-offset tmp-sz))))
+    ))
+  (vector-set! the-bv 1 (+ base-bv-pos cur-bv-offset))
+  (list->vector seq-lst)
+)
+
+(define (parse-ipv4 bv base-bv-pos use-bv-sz)
+  (define the-bv (vector-ref bv-info 0))
+  (define rst-v (vector-ref bv-info 1))
+  (define seq-lst (vector->list rst-v))
+  (define bv (vector-ref the-bv 0))
+  (define base-bv-pos (vector-ref the-bv 1))
+  (define cur-bv-offset 0)
+  (if (and (< cur-bv-offset use-bv-sz) (>= use-bv-sz ipv4-hdr-occupy-byte-num))
+    (let ()
+      (define tmp-struct (make-ipv4-hdr
+                           (bytevector-copy-sub bv
+                             (+ base-bv-pos cur-bv-offset)
+                             ipv4-hdr-occupy-byte-num)))
+      (set! seq-lst (append! seq-lst `(,tmp-struct)))
+      (set! cur-bv-offset (+ cur-bv-offset ipv4-hdr-occupy-byte-num))
+      (if (< cur-bv-offset use-bv-sz)
+        (if (= #x06 (ipv4-hdr-proto tmp-struct))
+          (begin
+            (let-values ([(ele ret-bv-pos)
+                           (parse-tcp bv
+                             (+ base-bv-pos cur-bv-offset)
+                             (- (ipv4-hdr-total-len tmp-struct) ipv4-hdr-occupy-byte-num))])
+              (if (and (> ret-bv-pos (+ base-bv-pos cur-bv-offset))
+                    (<= ret-bv-pos (+ base-bv-pos use-bv-sz)))
+                (let ()
+                  (set! seq-lst (append! seq-lst `(,ele)))
+                  (set! cur-bv-offset (- ret-bv-pos base-bv-pos))))))
+          (let ()
+            (define tmp-sz (- use-bv-sz cur-bv-offset))
+            (set! seq-lst (append! seq-lst `(,(bin-bytes (bytevector-copy-sub bv
+                                                           (+ base-bv-pos cur-bv-offset)
+                                                           tmp-sz)
+                                                0
+                                                tmp-sz))))
+            (set! cur-bv-offset (+ cur-bv-offset tmp-sz)))
+        ))
+    ))
+  (vector-set! the-bv 1 (+ base-bv-pos cur-bv-offset))
+  (list->vector seq-lst)
+)
+
+(define parse-file
+  (lambda (bv-info use-bv-sz arg)
+    (bin-eat name parse-pcap-hdr bv-info)
+    (bin-eat-witharg name parse-pcap-hdr bv-info (vector))
+    (bin-eat-limit name parse-pcap-hdr bv-info use-bv-sz)
+    (bin-eat-limit-witharg name parse-pcap-hdr bv-info use-bv-sz)
+  ))
