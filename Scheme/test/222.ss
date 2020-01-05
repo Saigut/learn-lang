@@ -45,3 +45,57 @@
   (printf "num bigend: ~x~%" n)
   (printf "num bigend reverse: ~x~%" (bitwise-reverse-bit-field n 0 (* 8 (bytevector-length bv))))
 )
+
+#;(and (integer? (syntax->datum #'num)) )
+
+(define-syntax make-v-wrap
+  (lambda (x)
+    (syntax-case x ()
+      [(k name n)
+        (with-syntax ([tmp-name (datum->syntax #'k (gensym))])
+          #'(begin
+              (define tmp-name (make-vector n))
+              (define-syntax name
+                (syntax-rules ()
+                  [(_) tmp-name]
+                  [(_ idx) (vector-ref tmp-name idx)]))))])))
+;; (make-v-wrap v 10)
+;; (v)
+;; (v 2)
+;; (vector-set! (v) 2 10)
+;; (v 2)
+
+
+(define-syntax make-v-wrap
+  (lambda (x)
+    (syntax-case x ()
+      [(k name n)
+        #'(begin
+            (define-syntax name
+              (let ([the-v (make-vector n)])
+                (syntax-rules ()
+                  [(_) the-v]
+                  [(_ idx) (vector-ref the-v idx)]))))])))
+;; (make-v-wrap v 10)
+;; (v)
+;; Exception: attempt to reference out-of-phase identifier the-v
+
+(define-syntax make-v-wrap
+  (lambda (x)
+    (syntax-case x ()
+      [(k name n)
+        #'(begin
+            (define name
+              (let ([the-v (make-vector n)])
+                (case-lambda
+                  [() the-v]
+                  [(idx) (vector-ref the-v idx)]
+                  [(idx new-val) (vector-set! the-v idx new-val)]))))])))
+;; (make-v-wrap v 10)
+;; (v)
+;; #(0 0 0 0 0 0 0 0 0 0)
+;; (v 1)
+;; 0
+;; (v 1 333)
+;; (v)
+;; #(0 333 0 0 0 0 0 0 0 0)
