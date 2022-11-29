@@ -1,3 +1,5 @@
 .idea
 
 _test_*
+
+*.exe
