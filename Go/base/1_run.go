@@ -13,6 +13,9 @@ func main() {
 // go env GOPATH
 // go env GOMODCACHE
 
+// 设置下载源
+// go env -w GOPROXY=https://goproxy.cn,direct
+
 // * 编译：go build .\1_run.ss.go。再运行
 // * 入口函数 main 必须在 main package 里。
 // * 同一个目录下的文件 package 名字相同。package 名字可以与目录名字相同，也可以不同
